@@ -1,0 +1,27 @@
+# Incus init preseed tuned for this WSL2 host.
+# - ipv6.address: none  → WSL2 rejects the dnsmasq IPv6 listening socket
+#   ("Address already in use" on fd42:…); IPv4 is all apt/dnf need.
+# - driver: dir         → no zfs/btrfs kernel modules required under WSL2.
+# Apply once with:  sudo incus admin init --preseed < test/scripts/incus-preseed.yaml
+config: {}
+networks:
+  - name: incusbr0
+    type: bridge
+    config:
+      ipv4.address: auto
+      ipv4.nat: "true"
+      ipv6.address: none
+storage_pools:
+  - name: default
+    driver: dir
+profiles:
+  - name: default
+    devices:
+      eth0:
+        name: eth0
+        network: incusbr0
+        type: nic
+      root:
+        path: /
+        pool: default
+        type: disk

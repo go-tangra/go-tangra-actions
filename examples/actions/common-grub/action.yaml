@@ -1,0 +1,43 @@
+# Composite action: the tangra-actions equivalent of the Puppet `common::grub`
+# class — show the GRUB menu with a 5s timeout, and run `update-grub` only when
+# something actually changed (Puppet's exec refreshonly + subscribe).
+#
+name: common-grub
+description: Show the GRUB menu with a 5s timeout; update-grub only if changed.
+
+runs:
+  using: composite
+  steps:
+    - id: menu
+      name: GRUB menu style
+      uses: file_line
+      with:
+        path: /etc/default/grub
+        match: '^GRUB_TIMEOUT_STYLE='
+        line: GRUB_TIMEOUT_STYLE=menu
+
+    - id: timeout
+      name: GRUB timeout
+      uses: file_line
+      with:
+        path: /etc/default/grub
+        match: '^GRUB_TIMEOUT='
+        line: GRUB_TIMEOUT=5
+
+    - id: cloud
+      name: GRUB cloud-init timeout (Ubuntu only)
+      uses: file_line
+      with:
+        path: /etc/default/grub.d/50-cloudimg-settings.cfg
+        create: "false" # no-op where the file is absent (non-Ubuntu)
+        match: '^GRUB_TIMEOUT='
+        line: GRUB_TIMEOUT=5
+
+    - name: Update GRUB
+      # refreshonly + subscribe: run only when one of the edits changed the file.
+      if: >-
+        steps.menu.outputs.changed == 'true' ||
+        steps.timeout.outputs.changed == 'true' ||
+        steps.cloud.outputs.changed == 'true'
+      run: update-grub
+      shell: bash

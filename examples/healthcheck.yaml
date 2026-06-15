@@ -1,0 +1,29 @@
+# Example workflow that uses the scripted `service-health` action and reacts to
+# its outputs with conditions. Run it with a Resolver rooted at examples/actions
+# and a ScriptRuntime that supports "javascript" (see examples/README.md).
+name: healthcheck
+
+inputs:
+  service:
+    default: nginx
+
+jobs:
+  check:
+    steps:
+      - id: health
+        uses: service-health
+        with:
+          service: ${{ inputs.service }}
+          report_path: /var/run/${{ inputs.service }}.health
+
+      - name: Restart if down
+        if: steps.health.outputs.active == 'false'
+        uses: service
+        with:
+          name: ${{ inputs.service }}
+          state: restarted
+
+      - name: Report
+        if: always()
+        run: echo "${{ inputs.service }} is ${{ steps.health.outputs.state }}"
+        shell: bash

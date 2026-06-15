@@ -1,0 +1,20 @@
+# A tiny self-contained JavaScript action (no host services touched) — handy for
+# confirming the JS runtime end-to-end.
+name: greet
+description: Build a greeting string in JavaScript.
+
+inputs:
+  name:
+    description: who to greet
+    required: true
+  shout:
+    description: uppercase the greeting when "true"
+    default: "false"
+
+outputs:
+  message:
+    description: the rendered greeting
+
+runs:
+  using: javascript
+  main: index.js

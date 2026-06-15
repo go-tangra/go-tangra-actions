@@ -1,0 +1,38 @@
+# Example composite action: write an nginx vhost and reload the service.
+# Referenced from a workflow as `uses: nginx-vhost` when the engine is given a
+# DirResolver rooted at examples/actions (or this dir on a MapResolver).
+name: nginx-vhost
+description: Render an nginx server block and reload nginx.
+
+inputs:
+  domain:
+    description: server_name for the vhost
+    required: true
+  port:
+    default: "80"
+
+outputs:
+  conf_path:
+    description: path of the written config
+    value: "${{ steps.write.outputs.path }}"
+
+runs:
+  using: composite
+  steps:
+    - id: write
+      uses: file
+      with:
+        path: /etc/nginx/conf.d/${{ inputs.domain }}.conf
+        mode: "0644"
+        content: |
+          server {
+            listen ${{ inputs.port }};
+            server_name ${{ inputs.domain }};
+          }
+
+    - name: Reload nginx
+      if: steps.write.outputs.changed == 'true'
+      uses: service
+      with:
+        name: nginx
+        state: reloaded

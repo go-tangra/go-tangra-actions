@@ -1,0 +1,115 @@
+# Example go-tangra-actions workflow: provision a web server.
+# Demonstrates inputs, env, jobs with `needs`, per-step conditions, status
+# functions and ${{ }} interpolation.
+name: provision-web
+
+inputs:
+  domain:
+    description: Virtual host server_name
+    default: example.com
+  hostname:
+    description: System hostname to set on the server
+    default: web-01
+  timezone:
+    description: IANA timezone to set on the server
+    default: UTC
+  enable_tls:
+    default: "false"
+
+env:
+  STAGE: prod
+
+jobs:
+  prepare:
+    steps:
+      - name: Set hostname
+        uses: hostname
+        with:
+          name: ${{ inputs.hostname }}
+
+      - name: Set timezone
+        uses: timezone
+        with:
+          name: ${{ inputs.timezone }}
+
+      - name: Disable auto-update and monitoring services
+        # Composite action (examples/actions/disable-auto-updates): stops and
+        # disables the apt auto-update timers (which can hold the dpkg lock) and
+        # the zabbix agent. ignore_missing makes each unit optional.
+        uses: disable-auto-updates
+
+  packages:
+    needs: [prepare]
+    steps:
+      - id: install
+        name: Install nginx
+        uses: package
+        with:
+          name: nginx
+          state: present
+          # Refresh the package index first — a freshly installed server has
+          # empty/stale lists, so the install would otherwise fail (apt exit 100).
+          update_cache: "true"
+
+      - id: tools
+        name: Install admin tools
+        uses: package
+        with:
+          # `name` takes a list (comma / space / newline separated). The index
+          # was already refreshed by the step above, so no update_cache here.
+          name: |
+            lsb-release
+            wget
+            vim-nox
+            mc
+            qemu-guest-agent
+            ncdu
+            nscd
+            bash-completion
+            sudo
+            restic
+            iftop
+            net-tools
+            git
+            screen
+            sssd-common
+            sssd-tools
+            autofs
+            ipa-client
+          state: present
+
+  configure:
+    needs: [packages]
+    steps:
+      - id: vhost
+        name: Write virtual host
+        uses: file
+        with:
+          path: /etc/nginx/conf.d/site.conf
+          mode: "0644"
+          content: |
+            server {
+              listen 80;
+              server_name ${{ inputs.domain }};
+            }
+
+      - name: Reload nginx
+        # only when the config was actually (re)written and nothing failed
+        if: success() && steps.vhost.outputs.changed == 'true'
+        uses: service
+        with:
+          name: nginx
+          state: reloaded
+          enabled: "true"
+
+      - name: Record result
+        if: always()
+        run: echo "configure finished on ${{ runner.os }} (stage=${{ env.STAGE }})"
+        shell: bash
+
+  notify:
+    needs: [configure]
+    if: always()
+    steps:
+      - name: Report
+        run: echo "provision-web result for ${{ inputs.domain }}"

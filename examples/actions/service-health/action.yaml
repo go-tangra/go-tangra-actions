@@ -1,0 +1,32 @@
+# Example SCRIPTED action (JavaScript), the go-tangra-actions analogue of a
+# GitHub `runs.using: node20` action. The package is two files:
+#   action.yaml  (this manifest)
+#   index.js     (the entry script named by runs.main)
+#
+# It is referenced from a workflow as `uses: service-health` when the engine is
+# given a Resolver that exposes this package (e.g. DirResolver rooted at
+# examples/actions) AND a ScriptRuntime that supports "javascript"
+# (go-tangra-client provides one over its embedded JS engine).
+name: service-health
+description: Check whether a systemd service is active and report its state.
+
+inputs:
+  service:
+    description: systemd unit to check (e.g. nginx)
+    required: true
+  report_path:
+    description: optional path to write a one-line status report (confined)
+    default: ""
+
+# Scripted-action outputs are set by the script at runtime via tangra.setOutput;
+# they need no `value:` (unlike composite actions). The descriptions document
+# what the script publishes.
+outputs:
+  active:
+    description: "true if the unit is active, false otherwise"
+  state:
+    description: raw `systemctl is-active` word (active|inactive|failed|...)
+
+runs:
+  using: javascript
+  main: index.js

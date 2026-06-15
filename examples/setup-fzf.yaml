@@ -1,0 +1,17 @@
+# Example workflow: install fzf and enable it in bash via the scripted
+# (JavaScript) install-fzf action.
+#
+#   tangra-actions -actions ./examples/actions ./examples/setup-fzf.yaml
+name: setup-fzf
+
+jobs:
+  tools:
+    steps:
+      - id: fzf
+        name: Install and enable fzf
+        uses: install-fzf
+
+      - name: Report
+        if: always()
+        run: echo "fzf via ${{ steps.fzf.outputs.manager }}, integration ${{ steps.fzf.outputs.integration }} at ${{ steps.fzf.outputs.integration_path }}"
+        shell: bash

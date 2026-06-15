@@ -1,0 +1,28 @@
+# Composite action: stop and disable the background services that interfere with
+# provisioning a freshly installed server — the apt auto-update timers (which
+# hold the dpkg lock and can break an install mid-run) and the zabbix monitoring
+# agent. `ignore_missing` makes each unit optional, so this is safe on any image
+# whether or not a given unit is present.
+#
+# Referenced from a workflow as `uses: disable-auto-updates` when the engine is
+# given a DirResolver rooted at examples/actions.
+name: disable-auto-updates
+description: Stop and disable apt auto-update timers and the zabbix agent.
+
+runs:
+  using: composite
+  steps:
+    - id: disable
+      name: Stop and disable background services
+      uses: service
+      with:
+        state: stopped
+        enabled: "false"
+        ignore_missing: "true"
+        name: |
+          apt-daily
+          apt-daily.timer
+          apt-daily-upgrade
+          apt-daily-upgrade.timer
+          unattended-upgrades
+          zabbix-agent

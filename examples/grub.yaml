@@ -1,0 +1,13 @@
+# Example workflow: configure GRUB (Puppet common::grub equivalent) via the
+# common-grub composite action.
+#
+#   tangra-actions -actions ./examples/actions ./examples/grub.yaml
+#
+# Note: needs a host with a real bootloader (/etc/default/grub + update-grub) —
+# i.e. a Tier-2 VM, not a container.
+name: grub
+
+jobs:
+  boot:
+    steps:
+      - uses: common-grub

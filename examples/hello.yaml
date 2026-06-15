@@ -1,0 +1,26 @@
+# A harmless demo workflow for the tangra-actions CLI (only runs echo/date).
+#   tangra-actions -input who=tangra examples/hello.yaml
+name: hello
+
+inputs:
+  who:
+    default: world
+
+jobs:
+  greet:
+    steps:
+      - id: say
+        name: Say hello
+        run: echo "hello ${{ inputs.who }}"
+        shell: sh
+
+      - name: Show date
+        run: date
+
+      - name: Only for the default
+        if: inputs.who == 'world'
+        run: echo "you used the default input"
+
+      - name: Always runs
+        if: always()
+        run: echo "done (${{ runner.os }}/${{ runner.arch }})"

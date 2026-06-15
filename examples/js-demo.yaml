@@ -1,0 +1,21 @@
+# Demonstrates a JavaScript action running end-to-end through the CLI's goja
+# runtime (no host services touched):
+#   tangra-actions -actions examples/actions examples/js-demo.yaml
+name: js-demo
+
+inputs:
+  name:
+    default: world
+
+jobs:
+  demo:
+    steps:
+      - id: g
+        name: Greet (in JS)
+        uses: greet
+        with:
+          name: ${{ inputs.name }}
+          shout: "true"
+
+      - name: Show the greeting
+        run: echo "${{ steps.g.outputs.message }}"

@@ -1,0 +1,35 @@
+# SCRIPTED (JavaScript) action: install fzf and enable its bash integration.
+#
+# Two files make up the package:
+#   action.yaml  (this manifest)
+#   index.js     (the entry script named by runs.main)
+#
+# Referenced from a workflow as `uses: install-fzf` when the engine is given a
+# Resolver that exposes this package (e.g. DirResolver rooted at examples/actions)
+# AND a ScriptRuntime that supports "javascript". The `tangra-actions` CLI embeds
+# one, so it runs out of the box (unless -no-js).
+name: install-fzf
+description: Install fzf and enable its bash key bindings and completion.
+
+inputs:
+  manager:
+    description: package manager override (apt|dnf|yum|apk|pacman); empty = auto-detect
+    default: ""
+  profile_path:
+    description: path of the bash integration drop-in to write
+    default: /etc/profile.d/fzf.sh
+
+# Outputs are set at runtime by the script via tangra.setOutput.
+outputs:
+  manager:
+    description: the package manager used
+  installed:
+    description: "true when fzf was installed/confirmed present"
+  integration:
+    description: written | unchanged
+  integration_path:
+    description: path of the bash integration drop-in
+
+runs:
+  using: javascript
+  main: index.js
