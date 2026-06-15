@@ -43,6 +43,9 @@ type Options struct {
 	// MaxActionDepth caps composite-action nesting (an action using an action
 	// using …). Zero selects defaultMaxActionDepth.
 	MaxActionDepth int
+	// Output, when set, receives live step output as it is produced (in addition
+	// to the buffered StepReport). This enables real-time log streaming.
+	Output OutputSink
 }
 
 // defaultMaxActionDepth bounds composite nesting as a backstop against runaway
@@ -58,6 +61,7 @@ type Runner struct {
 	resolver      Resolver
 	scriptRuntime ScriptRuntime
 	maxDepth      int
+	output        OutputSink
 }
 
 // New builds a Runner from Options, filling in defaults.
@@ -82,6 +86,7 @@ func New(opts Options) *Runner {
 		resolver:      opts.Resolver,
 		scriptRuntime: opts.ScriptRuntime,
 		maxDepth:      depth,
+		output:        opts.Output,
 	}
 }
 
@@ -213,6 +218,7 @@ func (r *Runner) runSteps(ctx context.Context, eng *expr.Engine, jc jobCtx, jobE
 	jobStatus := StatusSuccess
 	for _, step := range jc.job.Steps {
 		sr := r.runStep(ctx, eng, step, stepCtx{
+			jobID:      jc.id,
 			env:        mergeEnv(jobEnv, step.Env),
 			inputs:     jc.inputs,
 			steps:      steps,

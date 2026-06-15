@@ -11,6 +11,7 @@ package system
 
 import (
 	"context"
+	"io"
 	"runtime"
 )
 
@@ -27,6 +28,13 @@ type ExecRequest struct {
 	Env     []string // additional KEY=VALUE entries, appended to the base env
 	Dir     string   // working directory; empty means the process default
 	Combine bool     // if true, Stderr is folded into Stdout
+
+	// StdoutWriter/StderrWriter, when non-nil, receive process output live as it
+	// is produced (in addition to the buffered ExecResult). This is how a caller
+	// streams logs in real time. When Combine is set, both stdout and stderr are
+	// also written to StdoutWriter.
+	StdoutWriter io.Writer
+	StderrWriter io.Writer
 }
 
 // ExecResult is the outcome of a finished process. A non-zero ExitCode is not

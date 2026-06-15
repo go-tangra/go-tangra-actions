@@ -3,17 +3,20 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"slices"
 	"time"
 
 	"github.com/go-tangra/go-tangra-actions/action"
 	"github.com/go-tangra/go-tangra-actions/expr"
+	"github.com/go-tangra/go-tangra-actions/system"
 	"github.com/go-tangra/go-tangra-actions/workflow"
 )
 
 // stepCtx is the per-step evaluation environment.
 type stepCtx struct {
+	jobID      string
 	env        map[string]string
 	inputs     map[string]string
 	steps      map[string]expr.StepResult
@@ -71,7 +74,22 @@ func (r *Runner) runStep(ctx context.Context, eng *expr.Engine, step workflow.St
 	runCtx, cancel := stepContext(ctx, step.TimeoutSeconds)
 	defer cancel()
 
-	res, nested, runErr := r.dispatch(runCtx, eng, sc, actionName, withVals, env, stack)
+	// When live output is enabled, run this step's actions through a System that
+	// tees process output to the sink, and give scripted actions a live writer.
+	sys := r.sys
+	var live io.Writer
+	if r.output != nil {
+		label := step.ID
+		if label == "" {
+			label = step.Name
+		}
+		stdoutW := sinkWriter{sink: r.output, job: sc.jobID, step: label, stream: StreamStdout}
+		stderrW := sinkWriter{sink: r.output, job: sc.jobID, step: label, stream: StreamStderr}
+		sys = outputSystem{System: r.sys, stdout: stdoutW, stderr: stderrW}
+		live = stdoutW
+	}
+
+	res, nested, runErr := r.dispatch(runCtx, eng, sc, sys, live, actionName, withVals, env, stack)
 
 	sr.Steps = nested
 	sr.Stdout = r.masker.Mask(res.Stdout)
@@ -100,12 +118,12 @@ func (r *Runner) runStep(ctx context.Context, eng *expr.Engine, step workflow.St
 // dispatch runs the named action: a registered native action, or — failing
 // that — a composite action obtained from the Resolver. It returns the action
 // result, any nested (composite) step reports, and an execution error.
-func (r *Runner) dispatch(ctx context.Context, eng *expr.Engine, sc stepCtx, name string, with, env map[string]string, stack []string) (action.Result, []StepReport, error) {
+func (r *Runner) dispatch(ctx context.Context, eng *expr.Engine, sc stepCtx, sys system.System, live io.Writer, name string, with, env map[string]string, stack []string) (action.Result, []StepReport, error) {
 	if act, ok := r.reg.Get(name); ok {
 		res, err := act.Run(ctx, action.Input{
 			With:        with,
 			Env:         envSlice(env),
-			System:      r.sys,
+			System:      sys,
 			ConfineRoot: r.confineRoot,
 		})
 		return res, nil, err
@@ -119,7 +137,7 @@ func (r *Runner) dispatch(ctx context.Context, eng *expr.Engine, sc stepCtx, nam
 		if resolved.Def.Runs.IsComposite() {
 			return r.runComposite(ctx, eng, resolved.Def, name, with, env, stack, sc)
 		}
-		res, err := r.runScript(ctx, resolved, name, with, env)
+		res, err := r.runScript(ctx, resolved, name, with, env, sys, live)
 		return res, nil, err
 	}
 
@@ -130,7 +148,7 @@ func (r *Runner) dispatch(ctx context.Context, eng *expr.Engine, sc stepCtx, nam
 // The script receives the action's resolved inputs and a sandboxed ScriptHost;
 // its declared setOutput values come back as the action's outputs, and anything
 // it logs becomes the step's stdout.
-func (r *Runner) runScript(ctx context.Context, resolved *ResolvedAction, ref string, with, env map[string]string) (action.Result, error) {
+func (r *Runner) runScript(ctx context.Context, resolved *ResolvedAction, ref string, with, env map[string]string, sys system.System, live io.Writer) (action.Result, error) {
 	def := resolved.Def
 	using := def.Runs.Using
 
@@ -151,7 +169,7 @@ func (r *Runner) runScript(ctx context.Context, resolved *ResolvedAction, ref st
 		return action.Result{}, fmt.Errorf("action %q: %w", ref, err)
 	}
 
-	host := newScriptHost(r.sys, r.confineRoot)
+	host := newScriptHost(sys, r.confineRoot, live)
 	out, err := r.scriptRuntime.Run(ctx, ScriptInvocation{
 		Using:  using,
 		Main:   def.Runs.Main,
@@ -202,6 +220,7 @@ func (r *Runner) runComposite(ctx context.Context, eng *expr.Engine, def *workfl
 	reports := make([]StepReport, 0, len(def.Runs.Steps))
 	for _, cstep := range def.Runs.Steps {
 		csc := stepCtx{
+			jobID:      sc.jobID,
 			env:        mergeEnv(env, cstep.Env),
 			inputs:     inputs,
 			steps:      steps,

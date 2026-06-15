@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -47,12 +48,22 @@ func (r *Real) Exec(ctx context.Context, req ExecRequest) (ExecResult, error) {
 		cmd.Stdin = strings.NewReader(req.Input)
 	}
 
+	// Always buffer (for ExecResult); additionally tee to the caller's live
+	// writers when provided so output can be streamed as it is produced.
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var outW io.Writer = &stdout
+	if req.StdoutWriter != nil {
+		outW = io.MultiWriter(&stdout, req.StdoutWriter)
+	}
+	cmd.Stdout = outW
 	if req.Combine {
-		cmd.Stderr = &stdout
+		cmd.Stderr = outW
 	} else {
-		cmd.Stderr = &stderr
+		var errW io.Writer = &stderr
+		if req.StderrWriter != nil {
+			errW = io.MultiWriter(&stderr, req.StderrWriter)
+		}
+		cmd.Stderr = errW
 	}
 
 	err := cmd.Run()

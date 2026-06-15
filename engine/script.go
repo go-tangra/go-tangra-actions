@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"io"
 	"io/fs"
 	"strings"
 	"sync"
@@ -72,13 +73,14 @@ type ScriptHost interface {
 type scriptHost struct {
 	sys         system.System
 	confineRoot string
+	live        io.Writer // optional: receives logged lines as they are produced
 
 	mu  sync.Mutex
 	log strings.Builder
 }
 
-func newScriptHost(sys system.System, confineRoot string) *scriptHost {
-	return &scriptHost{sys: sys, confineRoot: confineRoot}
+func newScriptHost(sys system.System, confineRoot string, live io.Writer) *scriptHost {
+	return &scriptHost{sys: sys, confineRoot: confineRoot, live: live}
 }
 
 func (h *scriptHost) Exec(ctx context.Context, req system.ExecRequest) (system.ExecResult, error) {
@@ -115,6 +117,14 @@ func (h *scriptHost) Log(line string) {
 	h.log.WriteString(line)
 	if !strings.HasSuffix(line, "\n") {
 		h.log.WriteByte('\n')
+	}
+	// Forward live so a streaming consumer sees script output as it happens.
+	if h.live != nil {
+		s := line
+		if !strings.HasSuffix(s, "\n") {
+			s += "\n"
+		}
+		_, _ = io.WriteString(h.live, s)
 	}
 }
 
