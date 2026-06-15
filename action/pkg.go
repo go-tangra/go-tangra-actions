@@ -15,17 +15,27 @@ import (
 // manager, so a value like "nginx; rm -rf /" or "--force-yes" can never be
 // passed as an argument. No shell is used.
 //
+// On Debian/Ubuntu the modern `apt` binary is preferred over `apt-get` when it
+// is present on PATH (falling back to `apt-get`).
+//
 // Inputs (with):
 //
-//	name          (required) one or more package names (comma/space/newline separated)
+//	name          one or more package names (comma/space/newline separated).
+//	              Required unless `upgrade` is set.
 //	state         present | absent | latest  (default present)
 //	manager       override auto-detection (apt|dnf|yum|apk|pacman)
-//	update_cache  refresh the package index before acting (apt-get update,
+//	update_cache  refresh the package index before acting (apt update,
 //	              dnf/yum makecache, apk update, pacman -Sy). Default false.
 //	              A freshly installed host has empty/stale lists, so an install
 //	              without a refresh fails; set this true for first-run provisioning.
+//	upgrade       upgrade ALL installed packages (no name needed):
+//	                false (default) — no full upgrade
+//	                true | yes | safe — apt upgrade / dnf upgrade / apk upgrade / pacman -Su
+//	                full | dist — apt full-upgrade (apt-get dist-upgrade); same as safe elsewhere
+//	              Combine with update_cache:true for the equivalent of
+//	              `apt update && apt upgrade -y`.
 //
-// Outputs: manager, packages, state, cache_updated.
+// Outputs: manager, packages, state, cache_updated, upgrade.
 type Package struct{}
 
 func (*Package) Name() string { return "package" }
@@ -39,15 +49,40 @@ const (
 	stateLatest  pkgState = "latest"
 )
 
+// upgradeMode selects a full-system upgrade (all installed packages).
+type upgradeMode string
+
+const (
+	upgradeNone upgradeMode = ""     // no full upgrade
+	upgradeSafe upgradeMode = "safe" // conservative upgrade
+	upgradeFull upgradeMode = "full" // apt full-upgrade / apt-get dist-upgrade
+)
+
+// parseUpgrade maps the `upgrade` input to an upgradeMode.
+func parseUpgrade(s string) (upgradeMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "false", "no", "0", "off":
+		return upgradeNone, nil
+	case "true", "yes", "1", "on", "safe":
+		return upgradeSafe, nil
+	case "full", "dist":
+		return upgradeFull, nil
+	default:
+		return "", fmt.Errorf("invalid upgrade %q (want true/yes/safe | full/dist | false)", s)
+	}
+}
+
 func (*Package) Run(ctx context.Context, in Input) (Result, error) {
 	a := args(in.With)
 
-	nameRaw, err := a.required("name")
+	upgrade, err := parseUpgrade(a.str("upgrade"))
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("package: %w", err)
 	}
-	names := splitList(nameRaw)
-	if len(names) == 0 {
+
+	// Package names are required for install/remove, but not for a full upgrade.
+	names := splitList(a.str("name"))
+	if upgrade == upgradeNone && len(names) == 0 {
 		return Result{}, fmt.Errorf("package: no package names provided")
 	}
 	for _, n := range names {
@@ -80,11 +115,15 @@ func (*Package) Run(ctx context.Context, in Input) (Result, error) {
 		return Result{}, fmt.Errorf("package: unsupported manager %q (allowed: apt/dnf/yum/apk/pacman)", mgr)
 	}
 
+	// Prefer the modern `apt` CLI when available, else `apt-get`. Resolved once
+	// and threaded through every apt invocation so refresh/install/upgrade agree.
+	aptBin := aptBinary(in.System)
+
 	// Refresh the package index first when asked. A freshly installed host has
-	// empty/stale lists, so `state: present` would otherwise fail (e.g. apt-get
+	// empty/stale lists, so `state: present` would otherwise fail (e.g. apt
 	// exit 100). Run it as its own command before the install/upgrade.
 	if updateCache {
-		rbin, rargs, renv := packageRefreshCommand(mgr)
+		rbin, rargs, renv := packageRefreshCommand(mgr, aptBin)
 		rres, rerr := in.System.Exec(ctx, system.ExecRequest{
 			Name: rbin,
 			Args: rargs,
@@ -98,7 +137,18 @@ func (*Package) Run(ctx context.Context, in Input) (Result, error) {
 		}
 	}
 
-	bin, cmdArgs, env, err := packageCommand(mgr, state, names)
+	// Build the main command: a full-system upgrade, or an install/remove of
+	// the named packages.
+	var (
+		bin     string
+		cmdArgs []string
+		env     []string
+	)
+	if upgrade != upgradeNone {
+		bin, cmdArgs, env, err = packageUpgradeCommand(mgr, upgrade, aptBin)
+	} else {
+		bin, cmdArgs, env, err = packageCommand(mgr, state, names, aptBin)
+	}
 	if err != nil {
 		return Result{}, err
 	}
@@ -116,6 +166,7 @@ func (*Package) Run(ctx context.Context, in Input) (Result, error) {
 			"packages":      strings.Join(names, ","),
 			"state":         string(state),
 			"cache_updated": fmt.Sprintf("%t", updateCache),
+			"upgrade":       string(upgrade),
 		},
 	}
 	if err != nil {
@@ -135,11 +186,12 @@ var supportedManagers = map[string]bool{
 	"apt": true, "dnf": true, "yum": true, "apk": true, "pacman": true,
 }
 
-// detectManager finds the first supported package manager on PATH.
+// detectManager finds the first supported package manager on PATH. Both `apt`
+// and `apt-get` map to the logical "apt" manager.
 func detectManager(sys system.System) (string, bool) {
-	for _, m := range []string{"apt-get", "dnf", "yum", "apk", "pacman"} {
+	for _, m := range []string{"apt", "apt-get", "dnf", "yum", "apk", "pacman"} {
 		if _, ok := sys.LookPath(m); ok {
-			if m == "apt-get" {
+			if m == "apt" || m == "apt-get" {
 				return "apt", true
 			}
 			return m, true
@@ -148,10 +200,19 @@ func detectManager(sys system.System) (string, bool) {
 	return "", false
 }
 
+// aptBinary returns the apt binary to invoke: the modern `apt` CLI when present
+// on PATH, otherwise the scripting-stable `apt-get`.
+func aptBinary(sys system.System) string {
+	if _, ok := sys.LookPath("apt"); ok {
+		return "apt"
+	}
+	return "apt-get"
+}
+
 // packageCommand returns the binary, arguments and extra environment for the
 // given manager/state/names. Every flag is fixed and non-interactive; the only
 // variable tokens are the validated package names appended at the end.
-func packageCommand(mgr string, state pkgState, names []string) (bin string, cmdArgs, env []string, err error) {
+func packageCommand(mgr string, state pkgState, names []string, aptBin string) (bin string, cmdArgs, env []string, err error) {
 	switch mgr {
 	case "apt":
 		env = []string{"DEBIAN_FRONTEND=noninteractive"}
@@ -161,7 +222,7 @@ func packageCommand(mgr string, state pkgState, names []string) (bin string, cmd
 		case stateAbsent:
 			cmdArgs = []string{"remove", "-y"}
 		}
-		return "apt-get", append(cmdArgs, names...), env, nil
+		return aptBin, append(cmdArgs, names...), env, nil
 	case "dnf", "yum":
 		switch state {
 		case statePresent:
@@ -200,11 +261,12 @@ func packageCommand(mgr string, state pkgState, names []string) (bin string, cmd
 // packageRefreshCommand returns the index-refresh command for a manager (used
 // when update_cache is set). mgr is already validated against the allowlist, so
 // the binary name is never attacker-controlled. The refresh is non-interactive
-// and takes no package arguments.
-func packageRefreshCommand(mgr string) (bin string, args, env []string) {
+// and takes no package arguments. aptBin is the resolved apt binary (apt or
+// apt-get).
+func packageRefreshCommand(mgr, aptBin string) (bin string, args, env []string) {
 	switch mgr {
 	case "apt":
-		return "apt-get", []string{"update"}, []string{"DEBIAN_FRONTEND=noninteractive"}
+		return aptBin, []string{"update"}, []string{"DEBIAN_FRONTEND=noninteractive"}
 	case "dnf":
 		return "dnf", []string{"makecache"}, nil
 	case "yum":
@@ -215,5 +277,35 @@ func packageRefreshCommand(mgr string) (bin string, args, env []string) {
 		return "pacman", []string{"-Sy", "--noconfirm"}, nil
 	default:
 		return "", nil, nil
+	}
+}
+
+// packageUpgradeCommand returns the full-system upgrade command (all installed
+// packages) for a manager. For apt, `full`/`dist` maps to `apt full-upgrade`
+// (or `apt-get dist-upgrade` when the binary is apt-get); other managers treat
+// safe and full alike. Every flag is fixed and non-interactive.
+func packageUpgradeCommand(mgr string, mode upgradeMode, aptBin string) (bin string, args, env []string, err error) {
+	switch mgr {
+	case "apt":
+		env = []string{"DEBIAN_FRONTEND=noninteractive"}
+		if mode == upgradeFull {
+			// `apt full-upgrade` is the modern spelling of `apt-get dist-upgrade`.
+			if aptBin == "apt" {
+				args = []string{"full-upgrade", "-y"}
+			} else {
+				args = []string{"dist-upgrade", "-y"}
+			}
+		} else {
+			args = []string{"upgrade", "-y"}
+		}
+		return aptBin, args, env, nil
+	case "dnf", "yum":
+		return mgr, []string{"upgrade", "-y"}, nil, nil
+	case "apk":
+		return "apk", []string{"upgrade"}, nil, nil
+	case "pacman":
+		return "pacman", []string{"-Su", "--noconfirm"}, nil, nil
+	default:
+		return "", nil, nil, fmt.Errorf("package: unsupported manager %q", mgr)
 	}
 }

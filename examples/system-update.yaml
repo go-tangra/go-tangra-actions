@@ -1,0 +1,25 @@
+# Example workflow: refresh the package index and upgrade every installed
+# package via the system-update composite action (apt update && apt upgrade).
+#
+#   tangra-actions -actions ./examples/actions ./examples/system-update.yaml
+#   tangra-actions -actions ./examples/actions -input upgrade=full ./examples/system-update.yaml
+name: system-update
+
+inputs:
+  upgrade:
+    description: Upgrade mode — safe (default) or full.
+    default: safe
+
+jobs:
+  maintenance:
+    steps:
+      - id: update
+        name: Update and upgrade all packages
+        uses: system-update
+        with:
+          upgrade: ${{ inputs.upgrade }}
+
+      - name: Report
+        if: always()
+        run: echo "system upgraded via ${{ steps.update.outputs.manager }} (${{ steps.update.outputs.upgrade }})"
+        shell: bash

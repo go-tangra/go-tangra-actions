@@ -125,6 +125,41 @@ jobs:
 	}
 }
 
+// TestExampleSystemUpdateActionRuns guards the shipped system-update composite:
+// it must load via DirResolver and run `apt update` + `apt upgrade -y`, preferring
+// the modern `apt` binary, and publish the manager/upgrade outputs.
+func TestExampleSystemUpdateActionRuns(t *testing.T) {
+	f := system.NewFake().AddPath("apt").AddPath("apt-get")
+	var calls []string
+	f.ExecFunc = func(_ context.Context, req system.ExecRequest) (system.ExecResult, error) {
+		calls = append(calls, strings.TrimSpace(req.Name+" "+strings.Join(req.Args, " ")))
+		return system.ExecResult{ExitCode: 0}, nil
+	}
+	r := New(Options{System: f, Resolver: DirResolver{Root: "../examples/actions"}})
+
+	src := `
+jobs:
+  maintenance:
+    steps:
+      - id: update
+        uses: system-update
+`
+	res, err := r.Run(context.Background(), mustParse(t, src), nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("system-update example did not succeed: %s", collectErrs(res.Jobs["maintenance"].Steps))
+	}
+	if mgr := res.Jobs["maintenance"].Steps[0].Outputs["manager"]; mgr != "apt" {
+		t.Errorf("manager output = %q, want apt", mgr)
+	}
+	wantCalls := []string{"apt update", "apt upgrade -y"}
+	if len(calls) != 2 || calls[0] != wantCalls[0] || calls[1] != wantCalls[1] {
+		t.Errorf("exec calls = %v, want %v", calls, wantCalls)
+	}
+}
+
 // TestExampleScriptedActionRuns guards the shipped JavaScript action example:
 // its package loads via DirResolver and runs end-to-end through a ScriptRuntime,
 // publishing outputs that the example workflow branches on.

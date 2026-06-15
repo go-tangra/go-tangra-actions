@@ -1,0 +1,33 @@
+# Composite action: refresh the package index and upgrade every installed
+# package — the tangra-actions equivalent of `apt update && apt upgrade -y`.
+# Works across apt/dnf/yum/apk/pacman; on Debian/Ubuntu it prefers the modern
+# `apt` binary over `apt-get` automatically.
+#
+name: system-update
+description: Refresh the package index and upgrade all installed packages.
+
+inputs:
+  upgrade:
+    description: >-
+      Upgrade mode: "safe" (default, apt upgrade) or "full"
+      (apt full-upgrade / apt-get dist-upgrade — may add/remove packages).
+    default: safe
+
+outputs:
+  manager:
+    description: The package manager used (apt, dnf, yum, apk, pacman).
+    value: ${{ steps.update.outputs.manager }}
+  upgrade:
+    description: The upgrade mode that was performed.
+    value: ${{ steps.update.outputs.upgrade }}
+
+runs:
+  using: composite
+  steps:
+    - id: update
+      name: Update the package index and upgrade all packages
+      uses: package
+      with:
+        # Refresh the index first (apt update), then upgrade everything.
+        update_cache: "true"
+        upgrade: ${{ inputs.upgrade }}
