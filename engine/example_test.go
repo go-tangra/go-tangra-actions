@@ -138,12 +138,19 @@ func TestExampleDisableOldPhpFpm(t *testing.T) {
 				cmd = req.Name + " " + strings.Join(req.Args, " ")
 			}
 			calls = append(calls, cmd)
-			// `systemctl is-enabled <unit>` runs as a shell command (run: step).
-			if req.Shell != "" && strings.Contains(req.Name, "is-enabled") {
-				if strings.Contains(req.Name, "php8.3-fpm") && !php83Enabled {
-					return system.ExecResult{Stdout: "disabled\n", ExitCode: 1}, nil
+			// The composite gates on the `service_status` action, which runs
+			// `systemctl show <unit> -p ...`. php8.4-fpm is always enabled;
+			// php8.3-fpm is enabled per the test parameter.
+			if req.Name == "systemctl" && len(req.Args) > 0 && req.Args[0] == "show" {
+				enabled := true
+				if strings.Contains(req.Args[1], "php8.3-fpm") {
+					enabled = php83Enabled
 				}
-				return system.ExecResult{Stdout: "enabled\n", ExitCode: 0}, nil
+				out := "LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\n"
+				if !enabled {
+					out = "LoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState=disabled\n"
+				}
+				return system.ExecResult{Stdout: out, ExitCode: 0}, nil
 			}
 			return system.ExecResult{ExitCode: 0}, nil
 		}

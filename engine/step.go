@@ -156,6 +156,7 @@ func (r *Runner) dispatch(ctx context.Context, eng *expr.Engine, sc stepCtx, sys
 			Env:         envSlice(env),
 			System:      sys,
 			ConfineRoot: r.confineRoot,
+			Stdout:      live,
 		})
 		return res, nil, err
 	}

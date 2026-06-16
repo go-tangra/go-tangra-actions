@@ -11,7 +11,7 @@ import (
 
 func TestRegistry(t *testing.T) {
 	r := DefaultRegistry()
-	for _, name := range []string{"run", "package", "file", "file_line", "service", "service_status", "hostname", "timezone"} {
+	for _, name := range []string{"run", "package", "file", "file_line", "service", "service_status", "log", "hostname", "timezone"} {
 		if _, ok := r.Get(name); !ok {
 			t.Errorf("default registry missing %q", name)
 		}
@@ -20,7 +20,7 @@ func TestRegistry(t *testing.T) {
 		t.Error("unexpected action found")
 	}
 	got := strings.Join(r.Names(), ",")
-	if got != "file,file_line,hostname,package,run,service,service_status,timezone" {
+	if got != "file,file_line,hostname,log,package,run,service,service_status,timezone" {
 		t.Errorf("Names() = %q", got)
 	}
 }

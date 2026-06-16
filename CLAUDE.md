@@ -48,6 +48,6 @@ Offline: deps are in the module cache; `GOFLAGS=-mod=mod`.
 
 - Module path `github.com/go-tangra/go-tangra-actions`, Go 1.25.4.
 - Small files (<400 lines), table-driven tests, `gofmt`/`goimports` clean.
-- Builtin action names: `run`, `package`, `file`, `file_line`, `service`, `service_status`, `hostname`, `timezone`.
+- Builtin action names: `run`, `package`, `file`, `file_line`, `service`, `service_status`, `log`, `hostname`, `timezone`.
 - CEL injection-safety mirrors `go-tangra-ticket/internal/rules` (whitelist
   fields, emit literals, never interpolate user text into expression source).

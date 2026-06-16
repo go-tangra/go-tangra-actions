@@ -1,6 +1,6 @@
 // Package action defines the Action contract, a registry of named actions, and
 // the builtin actions go-tangra-actions ships with: run, package, file,
-// file_line, service, service_status, hostname and timezone. Actions perform
+// file_line, service, service_status, log, hostname and timezone. Actions perform
 // all side effects through the injected system.System
 // boundary, so they are fully testable against an in-memory fake and never
 // touch the host directly.
@@ -9,6 +9,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,12 @@ type Input struct {
 	Env         []string
 	System      system.System
 	ConfineRoot string
+	// Stdout, when non-nil, receives the action's output as it is produced, so it
+	// can stream live (in addition to the buffered Result.Stdout). The engine
+	// wires it to the live output sink per step; it is nil when no sink is set.
+	// Actions that shell out should tee via system.ExecRequest writers instead;
+	// this is for actions that emit output without exec (e.g. log).
+	Stdout io.Writer
 }
 
 // Action is a single named unit of work.
@@ -87,6 +94,7 @@ func DefaultRegistry() *Registry {
 	r.Register(&FileLine{})
 	r.Register(&Service{})
 	r.Register(&ServiceStatus{})
+	r.Register(&Log{})
 	r.Register(&Hostname{})
 	r.Register(&Timezone{})
 	return r
