@@ -10,11 +10,13 @@
 | `actions/disable-auto-updates/action.yaml` | A **composite** action that disables apt auto-update timers + zabbix via `service` (`ignore_missing`). |
 | `actions/common-grub/action.yaml` | A **composite** action: the Puppet `common::grub` equivalent — `file_line` edits + a refresh-only `update-grub` (runs only if a line changed). |
 | `actions/system-update/action.yaml` | A **composite** action: `apt update && apt upgrade` (multi–package-manager; prefers `apt` over `apt-get`). Input `upgrade: safe\|full`. |
+| `actions/disable-old-php-fpm/action.yaml` | A **composite** action: gate on `systemctl is-enabled` (CEL `if:`) and disable+stop `php8.3-fpm` only when both it and `php8.4-fpm` are installed and enabled. |
 | `js-demo.yaml` | A workflow that runs the `greet` JS action and uses its output. |
 | `healthcheck.yaml` | A workflow that `uses:` the scripted action and branches on its outputs. |
 | `setup-fzf.yaml` | A workflow that `uses:` the `install-fzf` JS action. |
 | `grub.yaml` | A workflow that `uses:` the `common-grub` composite (needs a real bootloader; Tier-2 VM). |
 | `system-update.yaml` | A workflow that `uses:` the `system-update` composite (`upgrade` input safe/full). |
+| `disable-old-php-fpm.yaml` | A workflow that `uses:` the `disable-old-php-fpm` composite. |
 
 The CLI runs JS actions directly (it embeds the `jsruntime` goja runtime):
 

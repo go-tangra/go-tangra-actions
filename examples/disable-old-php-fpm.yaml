@@ -1,0 +1,12 @@
+# Example workflow: retire php8.3-fpm on hosts that also run php8.4-fpm.
+# Disables + stops php8.3-fpm only when both FPM units are installed and enabled.
+#
+#   tangra-actions -actions ./examples/actions ./examples/disable-old-php-fpm.yaml
+name: disable-old-php-fpm
+
+jobs:
+  maintenance:
+    steps:
+      - id: retire
+        name: Retire php8.3-fpm if php8.4-fpm is active
+        uses: disable-old-php-fpm

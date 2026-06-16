@@ -22,15 +22,33 @@ func (s OutputStream) String() string {
 	return "stdout"
 }
 
-// OutputEvent is a chunk of live output produced by a step as it runs. Data is a
-// raw output chunk (not necessarily a whole line); secrets are NOT masked here,
-// so a sink that persists/forwards output should apply masking if needed (the
-// engine masks the buffered StepReport.Stdout/Stderr).
+// OutputKind distinguishes a live-output event: a step boundary (started/
+// finished) or a chunk of step output. This lets a consumer render
+// GitHub-Actions-style grouped logs with per-step results.
+type OutputKind int
+
+const (
+	KindOutput       OutputKind = iota // a chunk of step output (Stream/Data)
+	KindStepStarted                    // a step began (Name/Uses)
+	KindStepFinished                   // a step ended (Outcome)
+)
+
+// OutputEvent is a live event produced as a workflow runs: a step starting, a
+// chunk of that step's output, or a step finishing. For KindOutput, Data is a
+// raw output chunk (not necessarily a whole line) and is NOT secret-masked, so a
+// sink that persists/forwards output should mask if needed (the engine masks the
+// buffered StepReport.Stdout/Stderr).
 type OutputEvent struct {
+	Kind   OutputKind
 	Job    string
 	Step   string // step id, or display name when it has no id
+	Name   string // step display name (KindStepStarted/Finished)
+	Uses   string // action reference, if any (KindStepStarted)
 	Stream OutputStream
 	Data   []byte
+	// Outcome is the step result for KindStepFinished: "success", "failure",
+	// or "skipped".
+	Outcome string
 }
 
 // OutputSink receives live output as steps run. It is optional (engine.Options)

@@ -1,0 +1,38 @@
+# Composite action: when BOTH php8.4-fpm and php8.3-fpm are installed and
+# enabled, disable and stop the older php8.3-fpm so only the newer FPM stays
+# active. A no-op on hosts where either condition is false.
+#
+# `systemctl is-enabled <unit>` prints "enabled" (and exits 0) only when the
+# unit is installed AND enabled; it prints "disabled"/errors otherwise. The
+# checks use continue-on-error so a non-enabled/absent unit doesn't fail the
+# run — the gate is the captured output, not the exit status.
+#
+name: disable-old-php-fpm
+description: Disable+stop php8.3-fpm when php8.4-fpm and php8.3-fpm are both enabled.
+
+runs:
+  using: composite
+  steps:
+    - id: check_new
+      name: Is php8.4-fpm installed and enabled?
+      run: systemctl is-enabled php8.4-fpm.service
+      shell: bash
+      continue-on-error: true
+
+    - id: check_old
+      name: Is php8.3-fpm installed and enabled?
+      run: systemctl is-enabled php8.3-fpm.service
+      shell: bash
+      continue-on-error: true
+
+    - id: disable_old
+      name: Disable and stop php8.3-fpm
+      # Only when BOTH units report "enabled" (which also implies installed).
+      if: >-
+        steps.check_new.outputs.stdout.startsWith('enabled') &&
+        steps.check_old.outputs.stdout.startsWith('enabled')
+      uses: service
+      with:
+        name: php8.3-fpm
+        state: stopped
+        enabled: "false"

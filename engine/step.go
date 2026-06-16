@@ -44,7 +44,41 @@ func (sc stepCtx) condContext(cancelled bool) expr.Context {
 // returned StepReport has all secret-bearing fields masked. stack carries the
 // chain of composite action references currently being expanded, for depth and
 // cycle limiting.
+// stepLabel is the identifier used to tag a step's output: its id, or its
+// display name when it has no id.
+func stepLabel(step workflow.Step) string {
+	if step.ID != "" {
+		return step.ID
+	}
+	return step.Name
+}
+
+// runStep wraps the step execution with live step-boundary events (started /
+// finished+outcome) so a consumer can render GitHub-Actions-style grouped logs.
 func (r *Runner) runStep(ctx context.Context, eng *expr.Engine, step workflow.Step, sc stepCtx, stack []string) StepReport {
+	if r.output != nil {
+		r.output(OutputEvent{
+			Kind: KindStepStarted,
+			Job:  sc.jobID,
+			Step: stepLabel(step),
+			Name: step.Name,
+			Uses: step.Uses,
+		})
+	}
+	sr := r.runStepImpl(ctx, eng, step, sc, stack)
+	if r.output != nil {
+		r.output(OutputEvent{
+			Kind:    KindStepFinished,
+			Job:     sc.jobID,
+			Step:    stepLabel(step),
+			Name:    step.Name,
+			Outcome: sr.Outcome,
+		})
+	}
+	return sr
+}
+
+func (r *Runner) runStepImpl(ctx context.Context, eng *expr.Engine, step workflow.Step, sc stepCtx, stack []string) StepReport {
 	sr := StepReport{ID: step.ID, Name: step.Name, Uses: step.Uses, Outputs: map[string]string{}}
 	cancelled := ctx.Err() != nil
 	condCtx := sc.condContext(cancelled)
@@ -79,10 +113,7 @@ func (r *Runner) runStep(ctx context.Context, eng *expr.Engine, step workflow.St
 	sys := r.sys
 	var live io.Writer
 	if r.output != nil {
-		label := step.ID
-		if label == "" {
-			label = step.Name
-		}
+		label := stepLabel(step)
 		stdoutW := sinkWriter{sink: r.output, job: sc.jobID, step: label, stream: StreamStdout}
 		stderrW := sinkWriter{sink: r.output, job: sc.jobID, step: label, stream: StreamStderr}
 		sys = outputSystem{System: r.sys, stdout: stdoutW, stderr: stderrW}

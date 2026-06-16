@@ -3,11 +3,53 @@ package engine
 import (
 	"context"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/go-tangra/go-tangra-actions/system"
 )
+
+// TestRunner_StepLifecycleEvents verifies the sink receives StepStarted /
+// StepFinished(outcome) boundary events around a step's output.
+func TestRunner_StepLifecycleEvents(t *testing.T) {
+	f := system.NewFake()
+	f.ExecFunc = func(_ context.Context, req system.ExecRequest) (system.ExecResult, error) {
+		if req.StdoutWriter != nil {
+			_, _ = io.WriteString(req.StdoutWriter, "ok\n")
+		}
+		return system.ExecResult{Stdout: "ok\n", ExitCode: 0}, nil
+	}
+	var seq []string
+	r := New(Options{System: f, Output: func(ev OutputEvent) {
+		switch ev.Kind {
+		case KindStepStarted:
+			seq = append(seq, "start:"+ev.Name)
+		case KindStepFinished:
+			seq = append(seq, "end:"+ev.Name+":"+ev.Outcome)
+		case KindOutput:
+			seq = append(seq, "out")
+		}
+	}})
+	res, err := r.Run(context.Background(), mustParse(t, `
+jobs:
+  build:
+    steps:
+      - name: Greet
+        run: echo ok
+        shell: bash
+`), nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !res.Success {
+		t.Fatal("workflow failed")
+	}
+	got := strings.Join(seq, ",")
+	if got != "start:Greet,out,end:Greet:success" {
+		t.Errorf("event sequence = %q, want start:Greet,out,end:Greet:success", got)
+	}
+}
 
 // TestRunner_LiveOutputStreaming verifies that Options.Output receives a step's
 // output live (tagged with job/step/stream) while the buffered StepReport is

@@ -125,6 +125,63 @@ jobs:
 	}
 }
 
+// TestExampleDisableOldPhpFpm guards the shipped disable-old-php-fpm composite:
+// it disables+stops php8.3-fpm only when both FPM units report "enabled".
+func TestExampleDisableOldPhpFpm(t *testing.T) {
+	run := func(t *testing.T, php83Enabled bool) []string {
+		t.Helper()
+		f := system.NewFake()
+		var calls []string
+		f.ExecFunc = func(_ context.Context, req system.ExecRequest) (system.ExecResult, error) {
+			cmd := req.Name
+			if len(req.Args) > 0 {
+				cmd = req.Name + " " + strings.Join(req.Args, " ")
+			}
+			calls = append(calls, cmd)
+			// `systemctl is-enabled <unit>` runs as a shell command (run: step).
+			if req.Shell != "" && strings.Contains(req.Name, "is-enabled") {
+				if strings.Contains(req.Name, "php8.3-fpm") && !php83Enabled {
+					return system.ExecResult{Stdout: "disabled\n", ExitCode: 1}, nil
+				}
+				return system.ExecResult{Stdout: "enabled\n", ExitCode: 0}, nil
+			}
+			return system.ExecResult{ExitCode: 0}, nil
+		}
+		r := New(Options{System: f, Resolver: DirResolver{Root: "../examples/actions"}})
+		res, err := r.Run(context.Background(), mustParse(t, `
+jobs:
+  maintenance:
+    steps:
+      - id: retire
+        uses: disable-old-php-fpm
+`), nil)
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if !res.Success {
+			t.Fatalf("did not succeed: %s", collectErrs(res.Jobs["maintenance"].Steps))
+		}
+		return calls
+	}
+
+	t.Run("both enabled -> disable+stop", func(t *testing.T) {
+		joined := strings.Join(run(t, true), "\n")
+		if !strings.Contains(joined, "systemctl disable php8.3-fpm") {
+			t.Errorf("expected disable php8.3-fpm; calls:\n%s", joined)
+		}
+		if !strings.Contains(joined, "systemctl stop php8.3-fpm") {
+			t.Errorf("expected stop php8.3-fpm; calls:\n%s", joined)
+		}
+	})
+
+	t.Run("php8.3 not enabled -> no-op", func(t *testing.T) {
+		joined := strings.Join(run(t, false), "\n")
+		if strings.Contains(joined, "disable php8.3-fpm") || strings.Contains(joined, "stop php8.3-fpm") {
+			t.Errorf("should not touch php8.3-fpm when it is not enabled; calls:\n%s", joined)
+		}
+	})
+}
+
 // TestExampleSystemUpdateActionRuns guards the shipped system-update composite:
 // it must load via DirResolver and run `apt update` + `apt upgrade -y`, preferring
 // the modern `apt` binary, and publish the manager/upgrade outputs.
