@@ -179,6 +179,19 @@ func (*Package) Run(ctx context.Context, in Input) (Result, error) {
 	return result, nil
 }
 
+// aptConffileOpts stop dpkg from prompting on a modified config file during a
+// non-interactive run. DEBIAN_FRONTEND=noninteractive alone does NOT decide
+// conffile conflicts: when a package ships a new version of a config file the
+// admin (or a script) has changed, dpkg still asks "install maintainer's
+// version / keep yours?" and, with no TTY attached, fails with "end of file on
+// stdin at conffile prompt". These options make the choice automatically — keep
+// the currently-installed file, taking the package default only where the admin
+// never touched it — which is the safe, unattended-upgrade behaviour.
+var aptConffileOpts = []string{
+	"-o", "Dpkg::Options::=--force-confdef",
+	"-o", "Dpkg::Options::=--force-confold",
+}
+
 // supportedManagers is the allowlist of package-manager names a caller may
 // force via the `manager` input. The value maps to a fixed binary in
 // packageCommand, so anything outside this set is rejected.
@@ -218,7 +231,7 @@ func packageCommand(mgr string, state pkgState, names []string, aptBin string) (
 		env = []string{"DEBIAN_FRONTEND=noninteractive"}
 		switch state {
 		case statePresent, stateLatest:
-			cmdArgs = []string{"install", "-y", "--no-install-recommends"}
+			cmdArgs = append([]string{"install", "-y", "--no-install-recommends"}, aptConffileOpts...)
 		case stateAbsent:
 			cmdArgs = []string{"remove", "-y"}
 		}
@@ -298,6 +311,7 @@ func packageUpgradeCommand(mgr string, mode upgradeMode, aptBin string) (bin str
 		} else {
 			args = []string{"upgrade", "-y"}
 		}
+		args = append(args, aptConffileOpts...)
 		return aptBin, args, env, nil
 	case "dnf", "yum":
 		return mgr, []string{"upgrade", "-y"}, nil, nil

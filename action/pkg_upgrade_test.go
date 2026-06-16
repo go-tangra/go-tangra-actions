@@ -8,6 +8,11 @@ import (
 	"github.com/go-tangra/go-tangra-actions/system"
 )
 
+// aptConffileFlags is the joined form of the dpkg conffile options the package
+// action appends to apt install/upgrade commands (keep current config files,
+// never prompt). Kept in sync with action.aptConffileOpts.
+const aptConffileFlags = "-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold"
+
 func TestParseUpgrade(t *testing.T) {
 	cases := map[string]upgradeMode{
 		"":      upgradeNone,
@@ -80,8 +85,8 @@ func TestPackage_UpgradeSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run (no name needed for upgrade): %v", err)
 	}
-	if got.Name != "apt" || strings.Join(got.Args, " ") != "upgrade -y" {
-		t.Errorf("cmd = %q %v, want apt upgrade -y", got.Name, got.Args)
+	if got.Name != "apt" || strings.Join(got.Args, " ") != "upgrade -y "+aptConffileFlags {
+		t.Errorf("cmd = %q %v, want apt upgrade -y (+ conffile opts)", got.Name, got.Args)
 	}
 	if res.Outputs["upgrade"] != "safe" {
 		t.Errorf("upgrade output = %q, want safe", res.Outputs["upgrade"])
@@ -94,8 +99,8 @@ func TestPackage_UpgradeFull_Apt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got.Name != "apt" || strings.Join(got.Args, " ") != "full-upgrade -y" {
-		t.Errorf("cmd = %q %v, want apt full-upgrade -y", got.Name, got.Args)
+	if got.Name != "apt" || strings.Join(got.Args, " ") != "full-upgrade -y "+aptConffileFlags {
+		t.Errorf("cmd = %q %v, want apt full-upgrade -y (+ conffile opts)", got.Name, got.Args)
 	}
 }
 
@@ -106,8 +111,8 @@ func TestPackage_UpgradeFull_AptGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got.Name != "apt-get" || strings.Join(got.Args, " ") != "dist-upgrade -y" {
-		t.Errorf("cmd = %q %v, want apt-get dist-upgrade -y", got.Name, got.Args)
+	if got.Name != "apt-get" || strings.Join(got.Args, " ") != "dist-upgrade -y "+aptConffileFlags {
+		t.Errorf("cmd = %q %v, want apt-get dist-upgrade -y (+ conffile opts)", got.Name, got.Args)
 	}
 }
 
@@ -126,7 +131,7 @@ func TestPackage_UpdateThenUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	want := []string{"apt update", "apt upgrade -y"}
+	want := []string{"apt update", "apt upgrade -y " + aptConffileFlags}
 	if len(calls) != 2 || calls[0] != want[0] || calls[1] != want[1] {
 		t.Errorf("calls = %v, want %v", calls, want)
 	}

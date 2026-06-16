@@ -218,7 +218,10 @@ jobs:
 	if mgr := res.Jobs["maintenance"].Steps[0].Outputs["manager"]; mgr != "apt" {
 		t.Errorf("manager output = %q, want apt", mgr)
 	}
-	wantCalls := []string{"apt update", "apt upgrade -y"}
+	wantCalls := []string{
+		"apt update",
+		"apt upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold",
+	}
 	if len(calls) != 2 || calls[0] != wantCalls[0] || calls[1] != wantCalls[1] {
 		t.Errorf("exec calls = %v, want %v", calls, wantCalls)
 	}

@@ -176,7 +176,7 @@ func TestPackage_AptInstall(t *testing.T) {
 	if got.Name != "apt-get" {
 		t.Errorf("bin = %q, want apt-get", got.Name)
 	}
-	wantArgs := "install -y --no-install-recommends nginx curl"
+	wantArgs := "install -y --no-install-recommends " + aptConffileFlags + " nginx curl"
 	if strings.Join(got.Args, " ") != wantArgs {
 		t.Errorf("args = %v, want %q", got.Args, wantArgs)
 	}
