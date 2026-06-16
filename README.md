@@ -80,7 +80,7 @@ A step's `uses:` resolves three ways, so the verb set is fully open:
 1. **Native (Go) actions** — implement `action.Action` and `Registry.Register`
    it. This is how a consumer (`go-tangra-client`) adds first-class actions in
    code. The builtins (`run`, `package`, `file`, `file_line`, `service`,
-   `hostname`, `timezone`) are exactly these.
+   `service_status`, `hostname`, `timezone`) are exactly these.
 2. **Scripted (JS/Lua) actions** — downloadable code packages, the way GitHub
    actions work (`runs.using: node20` + `main: index.js`). A `ScriptRuntime`
    (supplied by the consumer — `go-tangra-client` already embeds a JS/Lua engine)
@@ -205,7 +205,7 @@ Security is a first-class concern (see `secure/`):
 | `expr` | CEL condition engine, contexts, status functions, `${{ }}` interpolation |
 | `system` | the OS boundary (`real` impl + `fake` for tests) |
 | `secure` | secret masking, path confinement, name/argument validation |
-| `action` | `Action` interface + registry + builtins (`run`, `package`, `file`, `file_line`, `service`, `hostname`, `timezone`) |
+| `action` | `Action` interface + registry + builtins (`run`, `package`, `file`, `file_line`, `service`, `service_status`, `hostname`, `timezone`) |
 | `engine` | the runner: job/step orchestration, condition evaluation, status tracking, composite-action expansion + `Resolver`s |
 
 ## Status

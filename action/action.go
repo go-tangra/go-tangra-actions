@@ -1,6 +1,7 @@
 // Package action defines the Action contract, a registry of named actions, and
-// the builtin actions go-tangra-actions ships with: run, package, file and
-// service. Actions perform all side effects through the injected system.System
+// the builtin actions go-tangra-actions ships with: run, package, file,
+// file_line, service, service_status, hostname and timezone. Actions perform
+// all side effects through the injected system.System
 // boundary, so they are fully testable against an in-memory fake and never
 // touch the host directly.
 package action
@@ -85,6 +86,7 @@ func DefaultRegistry() *Registry {
 	r.Register(&File{})
 	r.Register(&FileLine{})
 	r.Register(&Service{})
+	r.Register(&ServiceStatus{})
 	r.Register(&Hostname{})
 	r.Register(&Timezone{})
 	return r
