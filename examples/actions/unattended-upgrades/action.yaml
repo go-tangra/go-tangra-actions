@@ -1,0 +1,71 @@
+# Composite action: enable or disable apt unattended-upgrades (automatic OS
+# updates) on Debian/Ubuntu. Built entirely from native actions (package, file,
+# service) so it runs under restricted mode (no shell, no scripts).
+#
+# The on/off switch is apt's periodic config in /etc/apt/apt.conf.d/20auto-upgrades;
+# this action writes that file and (best-effort) toggles the service so the
+# `unattended_upgrades` flag the agent reports to IPAM flips accordingly.
+#
+name: unattended-upgrades
+description: Enable or disable apt unattended-upgrades (automatic OS updates).
+
+inputs:
+  state:
+    description: 'Desired state: "enabled" (default) or "disabled".'
+    default: enabled
+
+runs:
+  using: composite
+  steps:
+    # ---- enable ----
+    - id: install
+      name: Ensure unattended-upgrades is installed
+      if: inputs.state == 'enabled'
+      uses: package
+      with:
+        name: unattended-upgrades
+        state: present
+        update_cache: "true"
+
+    - id: enable_cfg
+      name: Turn on periodic unattended-upgrades
+      if: inputs.state == 'enabled'
+      uses: file
+      with:
+        path: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - id: enable_svc
+      name: Enable and start the unattended-upgrades service
+      if: inputs.state == 'enabled'
+      uses: service
+      with:
+        name: unattended-upgrades
+        state: started
+        enabled: "true"
+        ignore_missing: "true"
+
+    # ---- disable ----
+    - id: disable_cfg
+      name: Turn off periodic unattended-upgrades
+      if: inputs.state == 'disabled'
+      uses: file
+      with:
+        path: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "0";
+          APT::Periodic::Unattended-Upgrade "0";
+
+    - id: disable_svc
+      name: Stop and disable the unattended-upgrades service
+      if: inputs.state == 'disabled'
+      uses: service
+      with:
+        name: unattended-upgrades
+        state: stopped
+        enabled: "false"
+        ignore_missing: "true"

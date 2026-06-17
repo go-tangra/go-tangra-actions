@@ -227,6 +227,46 @@ jobs:
 	}
 }
 
+// TestExampleUnattendedUpgradesAction guards the shipped unattended-upgrades
+// composite: enabling writes the apt periodic config with "1", disabling writes
+// "0", using only native actions (loads via DirResolver, runs against the fake).
+func TestExampleUnattendedUpgradesAction(t *testing.T) {
+	const cfgPath = "/etc/apt/apt.conf.d/20auto-upgrades"
+	run := func(t *testing.T, state string) string {
+		t.Helper()
+		f := system.NewFake().AddPath("apt").AddPath("apt-get").AddPath("systemctl")
+		f.ExecFunc = func(_ context.Context, _ system.ExecRequest) (system.ExecResult, error) {
+			return system.ExecResult{ExitCode: 0}, nil
+		}
+		r := New(Options{System: f, Resolver: DirResolver{Root: "../examples/actions"}})
+		res, err := r.Run(context.Background(), mustParse(t, `
+jobs:
+  m:
+    steps:
+      - uses: unattended-upgrades
+        with: { state: `+state+` }
+`), nil)
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if !res.Success {
+			t.Fatalf("state=%s did not succeed: %s", state, collectErrs(res.Jobs["m"].Steps))
+		}
+		data, rerr := f.ReadFile(cfgPath)
+		if rerr != nil {
+			t.Fatalf("state=%s: config not written: %v", state, rerr)
+		}
+		return string(data)
+	}
+
+	if got := run(t, "enabled"); !strings.Contains(got, `Unattended-Upgrade "1"`) {
+		t.Errorf("enabled: config = %q, want Unattended-Upgrade \"1\"", got)
+	}
+	if got := run(t, "disabled"); !strings.Contains(got, `Unattended-Upgrade "0"`) {
+		t.Errorf("disabled: config = %q, want Unattended-Upgrade \"0\"", got)
+	}
+}
+
 // TestExampleScriptedActionRuns guards the shipped JavaScript action example:
 // its package loads via DirResolver and runs end-to-end through a ScriptRuntime,
 // publishing outputs that the example workflow branches on.
