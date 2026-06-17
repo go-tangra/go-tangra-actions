@@ -228,14 +228,16 @@ jobs:
 }
 
 // TestExampleUnattendedUpgradesAction guards the shipped unattended-upgrades
-// composite: enabling writes the apt periodic config with "1", disabling writes
-// "0", using only native actions (loads via DirResolver, runs against the fake).
+// composite: enabling writes the apt periodic config "1" AND enables the
+// apt-daily-upgrade.timer (the real trigger the agent's detection keys off);
+// disabling writes "0" AND disables that timer. Uses only native actions.
 func TestExampleUnattendedUpgradesAction(t *testing.T) {
 	const cfgPath = "/etc/apt/apt.conf.d/20auto-upgrades"
-	run := func(t *testing.T, state string) string {
+	run := func(t *testing.T, state string) (cfg string, calls []string) {
 		t.Helper()
 		f := system.NewFake().AddPath("apt").AddPath("apt-get").AddPath("systemctl")
-		f.ExecFunc = func(_ context.Context, _ system.ExecRequest) (system.ExecResult, error) {
+		f.ExecFunc = func(_ context.Context, req system.ExecRequest) (system.ExecResult, error) {
+			calls = append(calls, strings.TrimSpace(req.Name+" "+strings.Join(req.Args, " ")))
 			return system.ExecResult{ExitCode: 0}, nil
 		}
 		r := New(Options{System: f, Resolver: DirResolver{Root: "../examples/actions"}})
@@ -256,15 +258,35 @@ jobs:
 		if rerr != nil {
 			t.Fatalf("state=%s: config not written: %v", state, rerr)
 		}
-		return string(data)
+		return string(data), calls
 	}
 
-	if got := run(t, "enabled"); !strings.Contains(got, `Unattended-Upgrade "1"`) {
-		t.Errorf("enabled: config = %q, want Unattended-Upgrade \"1\"", got)
+	// enabled: config "1" + `systemctl enable apt-daily-upgrade.timer`.
+	cfg, calls := run(t, "enabled")
+	if !strings.Contains(cfg, `Unattended-Upgrade "1"`) {
+		t.Errorf("enabled: config = %q, want Unattended-Upgrade \"1\"", cfg)
 	}
-	if got := run(t, "disabled"); !strings.Contains(got, `Unattended-Upgrade "0"`) {
-		t.Errorf("disabled: config = %q, want Unattended-Upgrade \"0\"", got)
+	if !hasCall(calls, "systemctl enable apt-daily-upgrade.timer") {
+		t.Errorf("enabled: expected `systemctl enable apt-daily-upgrade.timer`; calls:\n%s", strings.Join(calls, "\n"))
 	}
+
+	// disabled: config "0" + `systemctl disable apt-daily-upgrade.timer`.
+	cfg, calls = run(t, "disabled")
+	if !strings.Contains(cfg, `Unattended-Upgrade "0"`) {
+		t.Errorf("disabled: config = %q, want Unattended-Upgrade \"0\"", cfg)
+	}
+	if !hasCall(calls, "systemctl disable apt-daily-upgrade.timer") {
+		t.Errorf("disabled: expected `systemctl disable apt-daily-upgrade.timer`; calls:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func hasCall(calls []string, want string) bool {
+	for _, c := range calls {
+		if c == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestExampleScriptedActionRuns guards the shipped JavaScript action example:

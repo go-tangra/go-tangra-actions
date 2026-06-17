@@ -38,12 +38,15 @@ runs:
           APT::Periodic::Update-Package-Lists "1";
           APT::Periodic::Unattended-Upgrade "1";
 
-    - id: enable_svc
-      name: Enable and start the unattended-upgrades service
+    - id: enable_timer
+      name: Enable the apt-daily-upgrade timer (the actual trigger)
+      # apt-daily-upgrade.timer is what runs unattended-upgrade on a schedule;
+      # the config flag above is a no-op without it. (unattended-upgrades.service
+      # is only the shutdown-time helper, so it is intentionally not toggled.)
       if: inputs.state == 'enabled'
       uses: service
       with:
-        name: unattended-upgrades
+        name: apt-daily-upgrade.timer
         state: started
         enabled: "true"
         ignore_missing: "true"
@@ -60,12 +63,14 @@ runs:
           APT::Periodic::Update-Package-Lists "0";
           APT::Periodic::Unattended-Upgrade "0";
 
-    - id: disable_svc
-      name: Stop and disable the unattended-upgrades service
+    - id: disable_timer
+      name: Disable the apt-daily-upgrade timer
+      # Config "0" already neutralises unattended-upgrade; disabling the timer
+      # too makes the host unambiguously report auto-updates as off.
       if: inputs.state == 'disabled'
       uses: service
       with:
-        name: unattended-upgrades
+        name: apt-daily-upgrade.timer
         state: stopped
         enabled: "false"
         ignore_missing: "true"
